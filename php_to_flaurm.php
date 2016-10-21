@@ -12,8 +12,9 @@ ini_set("error_log", "php-error.log");
 $servername = "localhost";
 $username = "user";
 $password = "password";
-$exportDBName = "PHPforums";
+$exportDBName = "phpbb";
 $importDBName = "flarum";
+$attachmentsBase = "http://example.com/files/"
 
 
 // Establish a connection to the server where the PHPBB database exists
@@ -54,7 +55,7 @@ else
 //Convert Users
 
 echo "<hr>Step 1 - Users<hr>";
-$result = $exportDbConnection->query("SELECT user_id, from_unixtime(user_regdate) as user_regdate, username_clean, user_email FROM phpbb_users");
+$result = $exportDbConnection->query("SELECT user_id, from_unixtime(user_regdate) as user_regdate, username_clean, user_email FROM phpbb_users where user_posts > 0 order by user_regdate desc"); // import only active users
 $totalUsers = $result->num_rows;
 if ($totalUsers)
 {
@@ -79,11 +80,20 @@ if ($totalUsers)
 			$id = $row['user_id'];
 			$email = $row['user_email'];
 			$password = sha1(md5(time()));
+			$altmail = md5($password.rand(0,999999999))."@example.com"; // i'm really sorry for that :)
 			$jointime = $row['user_regdate'];
 			$query = "INSERT INTO users (id, username, email, password, join_time, is_activated) VALUES ( '$id', '$formatedUsername', '$email', '$password', '$jointime', 1)";
 			$res = $importDbConnection->query($query);
 			if($res === false) {
-			  echo "Wrong SQL: " . $query . " Error: " . $importDbConnection->error . " <br/>";
+			  // turned out that sometimes the same email can be used in many accounts (if phpbb policy allows it)
+			  // flarum doesn't allow that, so i ended up replacing duplicate mail with wrong one
+			  // todo: it's better to use plus-notaion, since many mail providers support it
+			  // for example if user have mail test@example.com, we can replace it with test+anotheraccountname@example.com
+			  $query = "INSERT INTO users (id, username, email, password, join_time, is_activated) VALUES ( '$id', '$formatedUsername', '$altmail', '$password', '$jointime', 1)";
+			  $res = $importDbConnection->query($query);
+			  if ($res === false) {
+			    echo "Wrong SQL: " . $query . " Error: " . $importDbConnection->error . " <br/>";
+			  }
 			}
 		}
 		else {
@@ -162,9 +172,11 @@ if($topicCount)
 				$date = new DateTime();
 				$date->setTimestamp($post["post_time"]);
 				$postDate =  $date->format('Y-m-d H:i:s');
-				$postText = formatText($exportDbConnection, $post['post_text']);
+				$postText = formatText($exportDbConnection, $post['post_text'], $post["post_id"], $attachmentsBase);
+				
+				
 
-				if($post['post_id'] == 913){echo $postText;}
+				//if($post['post_id'] == 913){echo $postText;}
 
 				if(empty($post['post_username']))// If the post_username field has text it means it's a "ghost" post. Therefore we should set the poster id to 0 so Flarum knows it's an invalid user
 				{
@@ -261,8 +273,8 @@ else
 	echo "Table is empty";
 
 
-	// Convert user posted topics to user discussions?
-echo "<hr>last Step Update User table<hr/>";
+// Convert user posted topics to user discussions?
+echo "<hr>Step Update User table<hr/>";
 $result = $importDbConnection->query("SELECT id FROM users");
 if ($result->num_rows > 0)
 {
@@ -288,7 +300,17 @@ if ($result->num_rows > 0)
 else
 	echo "Table is empty";
 
-
+// updating discussions times
+echo "<hr>Step Update discussions times<hr/>";
+$res = $importDbConnection->query("select id from discussions");
+while ($discussion = $res->fetch_assoc()) {
+	$res2 = $importDbConnection->query("select time from posts where discussion_id = '".$discussion["id"]."' order by time desc limit 1");
+	if ($res2->num_rows) {
+		$post = $res2->fetch_assoc();
+		$importDbConnection->query("update discussions set last_time = '".$post["time"]."' where id = '".$discussion["id"]."'");
+	}
+}
+echo "Success";
 
 // Close connection to the database
 $exportDbConnection->close();
@@ -302,12 +324,16 @@ function print_r2($val)
 	echo  '</pre>';
 }
 
+function transliterate($st) {    $st = strtr($st, array( 'ж'=>'zh','ё'=>'yo','ч'=>'ch','ш'=>'sh','щ'=>'shch','ю'=>'yu','я'=>'ya',      'Ж'=>'Zh','Ё'=>'Yo','Ч'=>'Ch','Ш'=>'Sh','Щ'=>'Shch','Ю'=>'Yu','Я'=>'Ya','ä'=>'ae','ö'=>'oe','ü'=>'ue','ß'=>'ss','Ä'=>'Ae','Ö'=>'Oe','Ü'=>'Ue',      'æ'=>'ae','Æ'=>'Ae','Á'=>'A','À'=>'A','Â'=>'A','Ą'=>'A','Å'=>'A','Ç'=>'C','Ć'=>'C','Č'=>'C','É'=>'E','È'=>'E','Ê'=>'E','Ë'=>'E','Ę'=>'E','Ė'=>'E','Ě'=>'E',      'Ğ'=>'G','Î'=>'I','Ï'=>'I','İ'=>'I','Í'=>'I','I'=>'I','Į'=>'I','Ł'=>'L','Ĺ'=>'L','Ñ'=>'N','Ń'=>'N','Ó'=>'O','Ô'=>'O','Ø'=>'O','Ŕ'=>'R','Ř'=>'R','Ś'=>'S','Š'=>'S','Ş'=>'S',      'Ú'=>'U','Ù'=>'U','Û'=>'U','Ų'=>'U','Ū'=>'U','Ů'=>'U','Ý'=>'Y','Ź'=>'Z','Ż'=>'Z','Ž'=>'Z','á'=>'a','à'=>'a','â'=>'a','ą'=>'a','å'=>'a','ç'=>'c','ć'=>'c','č'=>'c','é'=>'e',      'è'=>'e','ê'=>'e','ë'=>'e','ę'=>'e','ė'=>'e','ě'=>'e','ğ'=>'g','î'=>'i','ï'=>'i','i'=>'i','í'=>'i','ı'=>'i','į'=>'i','ł'=>'l','ĺ'=>'l','ñ'=>'n','ń'=>'n','ó'=>'o','ô'=>'o',      'ø'=>'o','ŕ'=>'r','ř'=>'r','ś'=>'s','š'=>'s','ş'=>'s','ú'=>'u','ù'=>'u','û'=>'u','ų'=>'u','ū'=>'u','ů'=>'u','ý'=>'y','ź'=>'z','ż'=>'z','ž'=>'z','А'=>'A','Б'=>'B','В'=>'V',      'Г'=>'G','Ґ'=>'G','Д'=>'D','Е'=>'E','Є'=>'E','З'=>'Z',      'И'=>'I','Й'=>'Y','І'=>'I','Ї'=>'I','К'=>'K','Л'=>'L','М'=>'M','Н'=>'N','О'=>'O','П'=>'P','Р'=>'R','С'=>'S','Т'=>'T','У'=>'U','Ф'=>'F','Х'=>'H','Ц'=>'C','Ы'=>'Y','Э'=>'E',      'а'=>'a','б'=>'b','в'=>'v','г'=>'g','ґ'=>'g','д'=>'d','е'=>'e','є'=>'e','з'=>'z','и'=>'i','й'=>'y','і'=>'i','ї'=>'i','к'=>'k','л'=>'l','м'=>'m','н'=>'n','о'=>'o','п'=>'p',      'р'=>'r','с'=>'s','т'=>'t','у'=>'u','ф'=>'f','х'=>'h','ц'=>'c','ы'=>'y','э'=>'e','Ъ'=>'','Ь'=>'','ъ'=>'','ь'=>'',      ));   return $st; }
+
 function slugify($text)
 {
 	$text = preg_replace('~[^\\pL\d]+~u', '-', $text);
 	$text = trim($text, '-');
-	$text = iconv('utf-8', 'us-ascii//TRANSLIT', $text);
+	// iconv is bugged on many installations
+	//$text = iconv('utf-8', 'ISO-8859-1//TRANSLIT', $text);
 	$text = strtolower($text);
+	$text = transliterate($text);
 	$text = preg_replace('~[^-\w]+~', '', $text);
 
 	if (empty($text))
@@ -332,9 +358,24 @@ function mysql_escape_mimic($inp)
 	return $inp;
 }
 
-// Formats PHPBB's text to Flarum's text format
-function formatText($connection, $text)
+// Formats PHPBBs text to Flarums text format'"
+function formatText($connection, $text, $post_id, $attachmentsBase)
 {
+
+	// checking for post attachments
+	$attachmentsQuery = $connection->query("select physical_filename,real_filename from phpbb_attachments where post_msg_id = '".$post_id."'");
+	$attachmentsCount = $attachmentsQuery->num_rows;
+	if($attachmentsCount) {
+		while($attachment = $attachmentsQuery->fetch_assoc()) {
+			$ext = pathinfo($attachment["real_filename"], PATHINFO_EXTENSION);
+			if ((strtolower($ext) == "jpg") || (strtolower($ext) == "png") || (strtolower($ext) == "jpeg")) {
+				$text = $text."\n[img]$attachmentsBase".$attachment["physical_filename"].".".$ext."[/img]";
+			} else {
+				$text = $text."\n[url=$attachmentsBase".$attachment["physical_filename"].".".$ext.']'.$attachment["real_filename"]."[/url]";
+			}
+		}
+	}
+	$attachmentsQuery->free();
 	$text = preg_replace('#\:\w+#', '', $text);
 	$text = convertBBCodeToHTML($text);
 	$text = str_replace("&quot;","\"",$text);
@@ -352,8 +393,10 @@ function formatText($connection, $text)
 
 	$wrapTag = strpos($text, '&gt;') > 0 ? "r" : "t";// Posts with quotes need to be 'richtext'
 	$text = sprintf('<%s>%s</%s>', $wrapTag, $text, $wrapTag);
+	$text = preg_replace('/<!--(.*)-->/Uis','',$text);
 
 	return $connection->real_escape_string($text);
+	//return $text;
 }
 
 // Used to convert Categories to Tags
