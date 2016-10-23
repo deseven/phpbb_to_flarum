@@ -1,5 +1,7 @@
 <?php
 
+// this script catches old links to phpbb and redirects users to Flarum discussions
+
 $base = "http://forum.example.com";
 $loc = "$base";
 
