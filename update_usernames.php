@@ -1,5 +1,7 @@
 <?php
 
+// this is a helper script which helps you to update usernames
+
 $connFlarum = new mysqli("localhost","user","password","flarum");
 $connPHPBB = new mysqli("localhost","user","password","phpbb");
 $connFlarum->set_charset("utf8");
