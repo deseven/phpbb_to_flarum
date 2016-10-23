@@ -1,5 +1,9 @@
 <?php
 
+// this script tries to download avatars from phpbb and update flarum user settings according to avatar filename
+// you'll need to manually transfer avatars from $outDir to flarum/assets/avatars after that
+// i also suggest to resize all avatars to 100px (using mogrify, for example)
+
 $phpbbBase="http://example.com/download/file.php?avatar=";
 $outDir="avatars/";
 
