@@ -1,5 +1,7 @@
 <?php
 
+// this script creates symlinks with extensions for phpbb attachments, so you can later use them in Flarum
+
 $base = "/var/www/forum.example.com/files/";
 
 $conn = new mysqli("localhost","user","password","phpbb");
